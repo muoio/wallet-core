@@ -17,7 +17,13 @@
 #include "Coin.h"
 #include "interface/TWTestUtilities.h"
 
+#include <nlohmann/json.hpp>
+
 #include <gtest/gtest.h>
+
+#include <fstream>
+
+extern std::string TESTS_ROOT;
 
 namespace TW {
 
@@ -248,6 +254,46 @@ TEST(HDWallet, DeriveWithLeadingZerosEth) {
     auto wallet = HDWallet(mnemonic, "");
     const auto addr = Ethereum::Address(wallet.getKey(coin, DerivationPath(derivationPath)).getPublicKey(TW::publicKeyType(coin)));
     EXPECT_EQ(addr.string(), "0x0ba17e928471c64AaEaf3ABfB3900EF4c27b380D");
+}
+
+static nlohmann::json loadJson(std::string path) {
+    std::ifstream stream(path);
+    nlohmann::json json;
+    stream >> json;
+    return json;
+}
+
+static nlohmann::json getVectors() {
+    const std::string vectorsJsonPath = std::string(TESTS_ROOT) + "/HDWallet/bip39_vectors.json";
+    auto vectorsJson = loadJson(vectorsJsonPath)["english"];
+    return vectorsJson;
+}
+
+TEST(HDWallet, Bip39Vectors) {
+    const auto passphrase = "TREZOR";
+    const auto vectors = getVectors();
+    for (const auto& v: vectors) {
+        const std::string entropy = v[0];
+        const std::string mnemonic = v[1];
+        const std::string seed = v[2];
+        const std::string xprv = v[3];
+        { // from mnemonic
+            HDWallet wallet = HDWallet(mnemonic, passphrase);
+            EXPECT_EQ(wallet.getMnemonic(), mnemonic);
+            EXPECT_EQ(wallet.getPassphrase(), passphrase);
+            EXPECT_EQ(hex(wallet.getEntropy()), entropy);
+            EXPECT_EQ(hex(wallet.getSeed()), seed);
+            EXPECT_EQ(wallet.getRootKey(TWCoinTypeBitcoin, TWHDVersionXPRV), xprv);
+        }
+        { // from entropy
+            HDWallet wallet = HDWallet(parse_hex(entropy), passphrase);
+            EXPECT_EQ(wallet.getMnemonic(), mnemonic);
+            EXPECT_EQ(wallet.getPassphrase(), passphrase);
+            EXPECT_EQ(hex(wallet.getEntropy()), entropy);
+            EXPECT_EQ(hex(wallet.getSeed()), seed);
+            EXPECT_EQ(wallet.getRootKey(TWCoinTypeBitcoin, TWHDVersionXPRV), xprv);
+        }
+    }
 }
 
 } // namespace
